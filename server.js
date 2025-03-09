@@ -17,10 +17,18 @@ app.get('/', (req, res) => {
 
 // Register
 app.post('/register', async (req, res) => {
-    const { username, email, password } = req.body;
+    const { username, email, password, age, gender, address, phone } = req.body;
     try {
         const hashedPassword = await bcrypt.hash(password, 10);
-        const user = new User({ username, email, password: hashedPassword });
+        const user = new User({ 
+            username, 
+            email, 
+            password: hashedPassword,
+            age,
+            gender,
+            address,
+            phone
+        });
         await user.save();
         res.json({ message: 'User registered successfully.' });
     } catch (err) {
@@ -47,22 +55,76 @@ app.post('/login', async (req, res) => {
 // Get user profile
 app.get('/profile/:email', async (req, res) => {
     try {
-        const user = await User.findOne({ email: req.params.email });
+        const user = await User.findOne({ email: req.params.email })
+            .populate('favoriteRecipe')
+            .populate('likedRecipes')
+            .populate('savedRecipes')
+            .populate('recentComments.recipe');
+            
         if (!user) return res.status(404).json({ message: 'User not found' });
-        res.json({ username: user.username, email: user.email });
+        
+        res.json({
+            username: user.username,
+            email: user.email,
+            avatar: user.avatar,
+            bio: user.bio,
+            favoriteCuisines: user.favoriteCuisines,
+            dietaryPreferences: user.dietaryPreferences,
+            favoriteRecipe: user.favoriteRecipe,
+            likedRecipes: user.likedRecipes,
+            savedRecipes: user.savedRecipes,
+            recentComments: user.recentComments
+        });
     } catch (err) {
         console.log(err);
         res.status(500).json({ message: 'Error fetching profile' });
     }
 });
 
-// Update user details
+// Get all registered users
+app.get('/users', async (req, res) => {
+    try {
+        const users = await User.find({}, {
+            username: 1,
+            email: 1,
+            avatar: 1,
+            bio: 1,
+            favoriteCuisines: 1,
+            dietaryPreferences: 1
+        });
+        res.json(users);
+    } catch (err) {
+        console.log(err);
+        res.status(500).json({ message: 'Error fetching users' });
+    }
+});
+
+
+// Update user profile
 app.put('/update/:email', async (req, res) => {
     try {
-        const { username, password } = req.body;
-        const hashedPassword = password ? await bcrypt.hash(password, 10) : undefined;
-        const updateData = { username };
-        if (hashedPassword) updateData.password = hashedPassword;
+        const {
+            username,
+            password,
+            avatar,
+            bio,
+            favoriteCuisines,
+            dietaryPreferences,
+            favoriteRecipe
+        } = req.body;
+
+        const updateData = {
+            username,
+            avatar,
+            bio,
+            favoriteCuisines,
+            dietaryPreferences,
+            favoriteRecipe
+        };
+
+        if (password) {
+            updateData.password = await bcrypt.hash(password, 10);
+        }
         
         const user = await User.findOneAndUpdate(
             { email: req.params.email },
@@ -92,9 +154,15 @@ app.delete('/delete/:email', async (req, res) => {
 
 // Add recipe
 app.post('/recipes', async (req, res) => {
-    const { title, ingredients, instructions, userId } = req.body;
+    const { title, description, ingredients, image, userId } = req.body;
     try {
-        const recipe = new Recipe({ title, ingredients, instructions, userId });
+        const recipe = new Recipe({ 
+            title, 
+            description, 
+            ingredients, 
+            image, 
+            userId 
+        });
         await recipe.save();
         res.json({ message: 'Recipe added successfully', recipe });
     } catch (err) {
@@ -103,6 +171,39 @@ app.post('/recipes', async (req, res) => {
     }
 });
 
+// Add comment to recipe
+app.post('/recipes/:id/comments', async (req, res) => {
+    const { userId, text } = req.body;
+    try {
+        const recipe = await Recipe.findById(req.params.id);
+        if (!recipe) return res.status(404).json({ message: 'Recipe not found' });
+        
+        recipe.comments.push({ user: userId, text });
+        await recipe.save();
+        res.json({ message: 'Comment added successfully', recipe });
+    } catch (err) {
+        console.log(err);
+        res.status(500).json({ message: 'Error adding comment' });
+    }
+});
+
+// Like recipe
+app.post('/recipes/:id/like', async (req, res) => {
+    try {
+        const recipe = await Recipe.findById(req.params.id);
+        if (!recipe) {
+            return res.status(404).json({ message: 'Recipe not found' });
+        }
+
+        recipe.likes += 1;
+        await recipe.save();
+
+        res.json({ message: 'Recipe liked successfully', likes: recipe.likes });
+    } catch (err) {
+        console.error("Error liking recipe:", err);
+        res.status(500).json({ message: 'Error liking recipe', error: err.message });
+    }
+});
 // Get all recipes
 app.get('/recipes', async (req, res) => {
     try {
